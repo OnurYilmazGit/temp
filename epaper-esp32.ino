@@ -3,6 +3,8 @@
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <esp_task_wdt.h>
+#include "FS.h"
+#include "LittleFS.h"
 
 
 // Connections
@@ -78,6 +80,15 @@ void setup() {
   Serial.begin(115200);
   esp_task_wdt_init(8, true);
 
+  if (!LittleFS.begin()) {
+    Serial.println("LittleFS Mount Failed, formatting...");
+    LittleFS.format();
+    if (!LittleFS.begin()) {
+      Serial.println("Failed to format and mount LittleFS");
+      return;
+    }
+  }    
+
   // Connect to WiFi
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
@@ -106,14 +117,43 @@ server.on("/display", HTTP_POST, [](AsyncWebServerRequest *request){
   }
 });
 
-  // Start the web server
-  server.on("/cross", HTTP_GET, [](AsyncWebServerRequest *request) {
-    displayCross();  // Call the function to display the cross
-    request->send(200, "text/plain", "Black and white cross displayed");
-  });
-  server.begin();
-}
+server.on("/cross", HTTP_GET, [](AsyncWebServerRequest *request) {
+  displayCross();  // Call the function to display the cross
+  request->send(200, "text/plain", "Black and white cross displayed");
+});
 
+server.on("/upload", HTTP_POST, [](AsyncWebServerRequest *request) {
+  request->send(200, "text/plain", "File upload successful.");
+}, [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
+  static File uploadFile;
+  if (!index) {
+    Serial.println("Upload Start: " + filename);
+    uploadFile = LittleFS.open("/" + filename, "w");
+  }
+  if (uploadFile) {
+    uploadFile.write(data, len);
+    if (final) {
+      Serial.println("Upload Complete: " + filename);
+      Serial.printf("UploadEnd: %s, %u B\n", filename.c_str(), index + len);
+      uploadFile.close();
+    }
+  }
+});
+
+server.on("/list", HTTP_GET, [](AsyncWebServerRequest *request) {
+  String output = "Files:\n";
+  File root = LittleFS.open("/");
+  File file = root.openNextFile();
+  while(file) {
+    output += String(file.name()) + "\n";
+    file = root.openNextFile();
+  }
+  request->send(200, "text/plain", output);
+});
+
+// Start the web server
+server.begin();
+}
 void loop() {
   // put your main code here, to run repeatedly:
   // Avoid running the display logic in loop, as it's only needed once for a static display of text.
