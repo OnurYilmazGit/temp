@@ -1,50 +1,71 @@
+from flask import Flask, request, jsonify
 from PIL import Image, ImageEnhance, ImageFilter
 import numpy as np
+import os
+from datetime import datetime
 
-# Replace 'image.jpeg' with your image file
-image_path = 'pandaa.jpeg'
+app = Flask(__name__)
 
-# Open the image and convert to 1-bit black and white
-image = Image.open(image_path)
+def convert_h_to_bin(input_file, output_file):
+    # Read the .h file content
+    with open(input_file, 'r') as file:
+        content = file.read()
 
-contrast_enhancer = ImageEnhance.Contrast(image)
-image = contrast_enhancer.enhance(2.0)  # Increase the contrast
+    # Extract the array data
+    array_data_str = content.split('{', 1)[1].split('}', 1)[0]
+    array_data = [int(x, 16) for x in array_data_str.split(',') if x.strip().startswith('0X')]
 
-# Apply a sharpening filter to make the image details more pronounced
-image = image.filter(ImageFilter.SHARPEN)
+    # Write to a .bin file
+    with open(output_file, 'wb') as bin_file:
+        bin_file.write(bytearray(array_data))
 
-image = image.resize((200, 200))
+@app.route('/process-image', methods=['POST'])
+def process_image():
+    # Check if an image is part of the request
+    if 'image' not in request.files:
+        return "No image provided", 400
 
-# Convert to 1-bit black and white
-image = image.convert('1')
+    file = request.files['image']
 
-image.save('output.jpg')
+    # Process the image
+    image = Image.open(file.stream)
+    contrast_enhancer = ImageEnhance.Contrast(image)
+    image = contrast_enhancer.enhance(2.0)
+    image = image.filter(ImageFilter.SHARPEN)
+    image = image.resize((200, 200))
+    image = image.convert('1')
 
+    # Generate a unique filename for saving
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f'processed_{timestamp}.jpg'
+    c_array_filename = f'IMG_0001.h'
+    bin_filename = f'IMG_0001.bin'
 
-# Convert image to numpy array and make sure it is binary (0 for white, 1 for black)
-image_array = np.array(image).astype(np.uint8)
+    # Save the modified image
+    image.save(filename)
 
-# Invert the image (make 1 for white and 0 for black) if necessary
-# This is needed because some displays consider 0 as white and 1 as black.
-# Uncomment the following line if you need to invert the binary values.
-# image_array = 1 - image_array
+    # Convert image to numpy array and ensure it's binary
+    image_array = np.array(image).astype(np.uint8)
+    packed_image = np.packbits(image_array.flatten())
+    hex_values = ['0X{:02X}'.format(byte) for byte in packed_image]
+    output_width = 16
+    hex_array_str = ',\n'.join(', '.join(hex_values[i:i+output_width]) for i in range(0, len(hex_values), output_width))
+    c_array = f'const unsigned char IMAGE_BLACK[] PROGMEM = {{\n{hex_array_str}\n}};'
 
-# Flatten the array and pack 8 bits into each byte
-packed_image = np.packbits(image_array.flatten())
+    # Save the C array to a file
+    with open(c_array_filename, 'w') as f:
+        f.write(c_array)
 
-# Convert to a list of hex values
-hex_values = ['0X{:02X}'.format(byte) for byte in packed_image]
+    # Convert the .h file to a .bin file
+    convert_h_to_bin(c_array_filename, bin_filename)
 
-# Set the desired width of the C array output (number of values per line)
-output_width = 16
+    # Return file paths as response
+    return jsonify({
+        'message': 'Image processed successfully',
+        'image_path': filename,
+        'c_array_path': c_array_filename,
+        'bin_path': bin_filename
+    })
 
-# Create the C array string representation
-hex_array_str = ',\n'.join(', '.join(hex_values[i:i+output_width])
-                            for i in range(0, len(hex_values), output_width))
-
-# Format the array as a C array
-c_array = f'const unsigned char IMAGE_BLACK[] PROGMEM = {{\n{hex_array_str}\n}};'
-
-# Print the result or write to a .cpp file
-with open('IMG_0001.h', 'w') as f:
-    f.write(c_array)
+if __name__ == '__main__':
+    app.run(debug=True)
