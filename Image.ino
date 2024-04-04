@@ -1,6 +1,4 @@
 #include <GxEPD2_BW.h>
-#include <GxEPD2_3C.h> // for color displays
-#include <Fonts/FreeMonoBold9pt7b.h>
 #include "IMG_0001.h" 
 
 // Connections
