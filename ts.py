@@ -3,6 +3,7 @@ from PIL import Image, ImageEnhance, ImageFilter
 import numpy as np
 import os
 from datetime import datetime
+import requests 
 
 app = Flask(__name__)
 
@@ -58,6 +59,17 @@ def process_image():
 
     # Convert the .h file to a .bin file
     convert_h_to_bin(c_array_filename, bin_filename)
+
+    # Automatically upload the .bin file to the ESP32
+    esp32_upload_url = 'http://172.20.10.2/upload'
+    files = {'file': open(bin_filename, 'rb')}
+    response = requests.post(esp32_upload_url, files=files)
+    
+    if response.status_code == 200:
+        print("Upload to ESP32 successful")
+    else:
+        print("Failed to upload to ESP32. Status code:", response.status_code)
+    
 
     # Return file paths as response
     return jsonify({
