@@ -46,5 +46,5 @@ hex_array_str = ',\n'.join(', '.join(hex_values[i:i+output_width])
 c_array = f'const unsigned char IMAGE_BLACK[] PROGMEM = {{\n{hex_array_str}\n}};'
 
 # Print the result or write to a .cpp file
-with open('imagedata.cpp', 'w') as f:
+with open('IMG_0001.h', 'w') as f:
     f.write(c_array)
